@@ -253,6 +253,10 @@ public class VBGeoFinder
     {
 	try
 	{
+	    if (_debug)
+	    {
+		System.out.println(">>>> Pausing For " + millis/1000 + " seconds...");
+	    }
 	    Thread.sleep(millis);
 	}
 	catch (InterruptedException e)

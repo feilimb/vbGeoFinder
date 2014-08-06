@@ -39,6 +39,8 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
+import com.sun.media.sound.Toolkit;
+
 public class VBGeoFinder
 {
    private String VBF_HOST;
@@ -54,6 +56,7 @@ public class VBGeoFinder
    private BasicCookieStore cookieStore;
    private CloseableHttpClient httpClient;
    private boolean _debug = true;
+   private int totalImages;
 
    public static void main(String[] args)
    {
@@ -70,9 +73,17 @@ public class VBGeoFinder
       login();
       Collection<FThread> fThreads = collectThreads(31, 1);
       parseThreads(fThreads);
+      Iterator<FThread> iter = fThreads.iterator();
+      totalImages = 0;
+      while(iter.hasNext())
+      {
+    	  FThread ft = iter.next();
+    	  totalImages += ft.getImgURLs().size();
+      }
+      
       analyseImages(fThreads);
-      dumpUsefulInfo(fThreads);
       dumpAllImgURLsToFile(fThreads);
+      dumpUsefulInfo(fThreads);
 
       try
       {
@@ -97,6 +108,10 @@ public class VBGeoFinder
          VBF_USER = prop.getProperty("VBF_USER");
          VBF_PASSWD = prop.getProperty("VBF_PASSWD");
          LOCAL_PROXY_HOST = prop.getProperty("LOCAL_PROXY_HOST");
+         if (LOCAL_PROXY_HOST.isEmpty())
+         {
+        	 LOCAL_PROXY_HOST = null;
+         }
          if (LOCAL_PROXY_HOST != null)
          {
             LOCAL_PROXY_PORT = Integer.parseInt(prop.getProperty("LOCAL_PROXY_PORT"));
@@ -240,22 +255,32 @@ public class VBGeoFinder
          try
          {
             StringBuilder threadSource = httpGetWithResponse(ft.getUrl());
-            Document doc = Jsoup.parse(threadSource.toString());
-            Element firstContent = doc.select("div.content").first();
-            Elements imgTags = firstContent.getElementsByTag("img");
-            for (Element imTag : imgTags)
+            String tSrc = threadSource.toString();
+			Document doc = Jsoup.parse(tSrc);
+			
+			Elements allPosts = doc.getElementsByAttributeValueStarting("id", "post_message");
+            for (int i = 0; i < allPosts.size(); i++) 
             {
-               String imgUrl = imTag.attr("src");
-               boolean isEmoticon = (imTag.className() != null && imTag.className().contains("inlineimg"));
-               if (imgUrl != null && !isEmoticon)
-               {
-                  // hack for photobucket originals:
-                  if (imgUrl.contains("photobucket.com"))
-                  {
-                     imgUrl = imgUrl + "~original";
-                  }
-                  imgURLs.add(new URI(imgUrl));
-               }
+            	Element post = allPosts.get(i);
+                Elements imgTags = post.getElementsByTag("img");
+                for (Element imTag : imgTags)
+                {
+                   String imgUrl = imTag.attr("src");
+                   boolean isEmoticon = (imTag.className() != null && imTag.className().contains("inlineimg"));
+                   if (imgUrl != null && !isEmoticon)
+                   {
+                      // hack for photobucket originals:
+                      if (imgUrl.contains("photobucket.com"))
+                      {
+                         imgUrl = imgUrl + "~original";
+                      }
+                      imgURLs.add(new URI(imgUrl));
+                   }
+                }
+            }
+            if (_debug)
+            {
+            	System.out.println("Image URLs Collected: " + imgURLs.size());
             }
             ft.setImgURLs(imgURLs);
          }
@@ -314,13 +339,18 @@ public class VBGeoFinder
          Iterator<URI> iter2 = imgURLs.iterator();
          Collection<GPSInfo> gpsInfos = new LinkedHashSet<GPSInfo>();
          ft.setGPSInfos(gpsInfos);
+         int imgIndex = 0;
          while (iter2.hasNext())
          {
+        	 imgIndex+=1;
+        	 System.out.println(">>>> Image " + imgIndex + " / " + totalImages);
             URI url = iter2.next();
             // GPS data is always stripped from imgur and tapatalk - so don't bother with these
-            if (!url.toString().contains("imgur.com") && !url.toString().contains("tapatalk"))
+            if ((url.toString().startsWith("http://") || url.toString().startsWith("https://"))
+            		&& !url.toString().contains("imgur.com") 
+            		&& !url.toString().contains("tapatalk"))
             {
-               GPSInfo gi = analyseImage(url);
+               GPSInfo gi = analyseImage(url, ft);
                if (gi != null)
                {
                   // bingo!
@@ -331,7 +361,7 @@ public class VBGeoFinder
       }
    }
 
-   private GPSInfo analyseImage(URI uri)
+   private GPSInfo analyseImage(URI uri, FThread fThread)
    {
       byte[] imgContent;
       try
@@ -348,6 +378,12 @@ public class VBGeoFinder
       
       if (_debug)
       {
+    	  if (fThread != null)
+    	  {
+    		  System.out.println("Thread Name: " + fThread.getName());
+    		  System.out.println("Image URL: " + uri);
+    	  }
+    	  
          //Print Camera Info
          System.out.println("EXIF Fields: " + exif.size());
          System.out.println("-----------------------------");
@@ -368,8 +404,8 @@ public class VBGeoFinder
       {
          if (_debug)
          {
-            System.out.println("GPS Coordinate: " + coord[0] + ", " + coord[1]);
-            System.out.println("GPS Datum: " + image.getGPSDatum());
+            System.err.println("GPS Coordinate: " + coord[0] + ", " + coord[1]);
+            System.err.println("GPS Datum: " + image.getGPSDatum());
          }
          GPSInfo g = new GPSInfo();
          g.coord = coord;
@@ -434,9 +470,9 @@ public class VBGeoFinder
             content.append(ft.getThreadId()).append(NL);
             for (GPSInfo gi : gis)
             {
-               content.append("GPS Coordinate: ").append(gi.coord[0]).append(", ").append(gi.coord[1]).append(NL);
+               content.append("GPS Coordinate: ").append(gi.coord[1]).append(", ").append(gi.coord[0]).append(NL);
                content.append("GPS Datum: ").append(gi.gpsDatum).append(NL);
-               content.append("URL: ").append(gi.url);
+               content.append("URL: ").append(gi.url).append(NL);
             }
             content.append("====================================================");
          }

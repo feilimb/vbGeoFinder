@@ -81,8 +81,8 @@ public class VBGeoFinder
 	    totalImages += ft.getImgURLs().size();
 	}
 
-	analyseImages(fThreads);
 	dumpAllImgURLsToFile(fThreads);
+	analyseImages(fThreads);
 	dumpUsefulInfo(fThreads);
 
 	try

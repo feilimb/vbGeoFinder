@@ -258,7 +258,6 @@ public class VBGeoFinder
                }
             }
             ft.setImgURLs(imgURLs);
-            break;
          }
          catch (Exception e)
          {

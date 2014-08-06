@@ -4,6 +4,6 @@
 hs_err_pid*
 
 # Config Files
-#*.config
-#*.properties
+*.config
+*.properties
 /bin/

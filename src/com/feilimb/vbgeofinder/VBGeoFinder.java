@@ -39,8 +39,6 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
-import com.sun.media.sound.Toolkit;
-
 public class VBGeoFinder
 {
     private String VBF_HOST;
@@ -220,7 +218,7 @@ public class VBGeoFinder
 	Matcher m = null;
 	for (int pageNum = 1; pageNum <= numPages; pageNum++)
 	{
-	    pause(3000);
+	    pause(2000);
 	    URI url = buildForumSectionURI(forumNum, pageNum);
 	    try
 	    {
@@ -267,16 +265,18 @@ public class VBGeoFinder
 
     private void parseThreads(Collection<FThread> fThreads)
     {
+	int fThreadIndex = 0;
 	Iterator<FThread> iter = fThreads.iterator();
 	while (iter.hasNext())
 	{
 	    FThread ft = iter.next();
+	    System.out.println(">>>>> On Thread " + (++fThreadIndex) + " / " + fThreads.size());
 	    Collection<URI> imgURLs = new LinkedHashSet<URI>();
 	    System.out.println("Name = " + ft.getName() + ", URL = "
 		    + ft.getUrl());
 	    try
 	    {
-		pause(3000);
+		pause(2000);
 		StringBuilder threadSource = httpGetWithResponse(ft.getUrl());
 		String tSrc = threadSource.toString();
 		Document doc = Jsoup.parse(tSrc);
@@ -299,7 +299,16 @@ public class VBGeoFinder
 			    {
 				imgUrl = imgUrl + "~original";
 			    }
-			    imgURLs.add(new URI(imgUrl));
+			    imgUrl = imgUrl.replaceAll(" ", "%20");
+			    try
+			    {
+				imgURLs.add(new URI(imgUrl));
+			    }
+			    catch (URISyntaxException e)
+			    {
+				e.printStackTrace();
+				continue;
+			    }
 			}
 		    }
 		}

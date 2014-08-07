@@ -66,6 +66,10 @@ public class VBGeoFinder
    private String LOCAL_PROXY_HOST;
 
    private int LOCAL_PROXY_PORT;
+   
+   private int FORUM_SECTION_ID;
+   
+   private int FORUM_SECTION_NUM_PAGES;
 
    private BasicCookieStore cookieStore;
 
@@ -146,7 +150,7 @@ public class VBGeoFinder
          break;
       case COLLECT:
       default:
-         fThreads = collectThreads(31, 41);
+         fThreads = collectThreads(FORUM_SECTION_ID, FORUM_SECTION_NUM_PAGES);
          parseThreads(fThreads);
          dumpImgURLsToFile(fThreads);
          break;
@@ -173,6 +177,10 @@ public class VBGeoFinder
          VBF_PORT = Integer.parseInt(prop.getProperty("VBF_PORT"));
          VBF_USER = prop.getProperty("VBF_USER");
          VBF_PASSWD = prop.getProperty("VBF_PASSWD");
+         
+         FORUM_SECTION_ID = Integer.parseInt(prop.getProperty("FORUM_SECTION_ID"));
+         FORUM_SECTION_NUM_PAGES = Integer.parseInt(prop.getProperty("FORUM_SECTION_NUM_PAGES"));
+         
          LOCAL_PROXY_HOST = prop.getProperty("LOCAL_PROXY_HOST");
          if (LOCAL_PROXY_HOST.isEmpty())
          {

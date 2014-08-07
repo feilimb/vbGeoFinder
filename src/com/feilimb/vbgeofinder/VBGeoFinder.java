@@ -751,10 +751,3 @@ public class VBGeoFinder
    }
 
 }
-
-/*
- * Copyright 2004-2014 Pilz Ireland Industrial Automation Ltd. All Rights
- * Reserved. PILZ PROPRIETARY/CONFIDENTIAL.
- * 
- * Created on 30 Jul 2014
- */

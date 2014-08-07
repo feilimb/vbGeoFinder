@@ -95,7 +95,7 @@ public class VBGeoFinder
                Integer tid1 = Integer.parseInt(o1.getThreadId());
                Integer tid2 = Integer.parseInt(o2.getThreadId());
                
-               return tid1.compareTo(tid2);
+               return tid2.compareTo(tid1);
             }
             catch (NumberFormatException e)
             {

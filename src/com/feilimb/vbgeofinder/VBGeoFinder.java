@@ -1,18 +1,24 @@
 package com.feilimb.vbgeofinder;
 
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -67,35 +73,84 @@ public class VBGeoFinder
 
    private boolean _debug = true;
 
-   private int totalImages;
-
+   private static final String NL = "\n";
+   
+   private static final Comparator<FThread> THREAD_COMPARATOR;
+   
+   private enum MODE {COLLECT, ANALYSE, MINIRUN};
+   
+   static
+   {
+      THREAD_COMPARATOR = new Comparator<FThread>()
+      {
+         @Override
+         public int compare(FThread o1, FThread o2)
+         {
+            try
+            {
+               Integer tid1 = Integer.parseInt(o1.getThreadId());
+               Integer tid2 = Integer.parseInt(o2.getThreadId());
+               
+               return tid1.compareTo(tid2);
+            }
+            catch (NumberFormatException e)
+            {
+               return 1;
+            }
+         }
+      };
+   }
+   
    public static void main(String[] args)
    {
       VBGeoFinder mkf = new VBGeoFinder();
-      mkf.start();
+      MODE m = initMode(args);
+      mkf.start(m);
    }
 
-   private void start()
+   private static MODE initMode(String[] args)
+   {
+      MODE m = MODE.COLLECT;     // default to collect mode
+      if (args != null && args.length > 0)
+      {
+         String mode = args[0];
+         try
+         {
+            m = MODE.valueOf(mode);
+         }
+         catch (IllegalArgumentException e)
+         {
+            // unrecognised mode - just leave the mode at the default
+         } 
+      }
+
+      return m;
+   }
+
+   private void start(MODE mode)
    {
       initProperties();
       boolean useProxy = LOCAL_PROXY_HOST != null;
       initHttpClient(useProxy, true);
 
       login();
-      Collection<FThread> fThreads = collectThreads(31, 41);
-      parseThreads(fThreads);
-      Iterator<FThread> iter = fThreads.iterator();
-      totalImages = 0;
-      while (iter.hasNext())
+      
+      Collection<FThread> fThreads = null;
+      switch (mode)
       {
-         FThread ft = iter.next();
-         totalImages += ft.getImgURLs().size();
+      case ANALYSE:
+         fThreads = analyseImages("img_urls.txt");
+         dumpUsefulInfoToFile(fThreads);
+         break;
+      case MINIRUN:
+         break;
+      case COLLECT:
+      default:
+         fThreads = collectThreads(31, 41);
+         parseThreads(fThreads);
+         dumpImgURLsToFile(fThreads);
+         break;
       }
-
-      dumpAllImgURLsToFile(fThreads);
-      //analyseImages(fThreads);
-      //dumpUsefulInfo(fThreads);
-
       try
       {
          httpClient.close();
@@ -376,8 +431,84 @@ public class VBGeoFinder
       return responseByteArray;
    }
 
+   private Collection<FThread> analyseImages(String filename)
+   {
+      Collection<FThread> fThreads = parseThreadsFromFile(filename);
+      analyseImages(fThreads);
+      return fThreads;
+   }
+   
+   private Collection<FThread> parseThreadsFromFile(String filename)
+   {
+      Pattern p = Pattern.compile("^(\\d+)(=)(.*)$");
+      File f = new File(filename);
+      BufferedReader br = null;
+      Matcher m = null;
+      Map<String, FThread> threadMap = new HashMap<String, FThread>();
+      try
+      {
+         String sCurrentLine;
+         FileReader fr = new FileReader(f);
+         br = new BufferedReader(fr);
+         while ((sCurrentLine = br.readLine()) != null) 
+         {
+            m = p.matcher(sCurrentLine);
+            if (m.matches())
+            {
+               String threadId = m.group(1);
+               String url = m.group(3);
+               try
+               {
+                  if (threadMap.containsKey(threadId))
+                  {
+                     FThread ft = threadMap.get(threadId);
+                     ft.getImgURLs().add(new URI(url));
+                  }
+                  else
+                  {
+                     URI pageUri = buildPageThreadURI(threadId);
+                     FThread ft = new FThread("Thread_"+threadId, pageUri, threadId);
+                     Collection<URI> imgURLs = new LinkedHashSet<URI>();
+                     ft.setImgURLs(imgURLs);
+                     threadMap.put(threadId, ft);
+                     ft.getImgURLs().add(new URI(url));
+                  }
+               }
+               catch (URISyntaxException e)
+               {
+                  // some dodgy URL - just go onto the next one 
+                  continue;
+               }
+            }
+         }
+         br.close();
+      }
+      catch (IOException e)
+      {
+         System.err.println(">>>> File at path: [" + filename + "] does not exist, please ensure the correct path.");
+         System.exit(1);
+      }
+      
+      List<FThread> fThreads = new ArrayList<FThread>(threadMap.values());
+      Collections.sort(fThreads, THREAD_COMPARATOR);
+      
+      return fThreads;
+   }
+
    private void analyseImages(Collection<FThread> fThreads)
    {
+      Iterator<FThread> it = fThreads.iterator();
+      int totalImages = 0;
+      while (it.hasNext())
+      {
+         FThread ft = it.next();
+         if (ft.getImgURLs() != null)
+         {
+            totalImages += ft.getImgURLs().size();
+         }
+      }
+      System.out.println(">>>>> Total Images for Analysis: " + totalImages);
+      
       Iterator<FThread> iter = fThreads.iterator();
       while (iter.hasNext())
       {
@@ -390,8 +521,7 @@ public class VBGeoFinder
          while (iter2.hasNext())
          {
             imgIndex += 1;
-            System.out.println(">>>> Image " + imgIndex + " / "
-                  + totalImages);
+            System.out.println(">>>> Image " + imgIndex + " / " + totalImages);
             URI url = iter2.next();
             // GPS data is always stripped from imgur and tapatalk - so
             // don't bother with these
@@ -508,9 +638,8 @@ public class VBGeoFinder
       return url;
    }
 
-   private void dumpUsefulInfo(Collection<FThread> fThreads)
+   private void dumpUsefulInfoToFile(Collection<FThread> fThreads)
    {
-      final String NL = "\n";
       Iterator<FThread> iter = fThreads.iterator();
       StringBuilder content = new StringBuilder();
       while (iter.hasNext())
@@ -519,7 +648,10 @@ public class VBGeoFinder
          Collection<GPSInfo> gis = ft.getGpsInfos();
          if (gis != null && !gis.isEmpty())
          {
-            content.append(ft.getName()).append(NL);
+            if (ft.getName() != null && !ft.getName().isEmpty())
+            {
+               content.append(ft.getName()).append(NL);
+            }
             content.append(ft.getThreadId()).append(NL);
             for (GPSInfo gi : gis)
             {
@@ -536,7 +668,7 @@ public class VBGeoFinder
       writeStringIntoFile(content.toString(), "geo_imgs.txt");
    }
 
-   private void dumpAllImgURLsToFile(Collection<FThread> fThreads)
+   private void dumpImgURLsToFile(Collection<FThread> fThreads)
    {
       Iterator<FThread> iter = fThreads.iterator();
       StringBuilder content = new StringBuilder();
@@ -548,14 +680,38 @@ public class VBGeoFinder
          while (iter2.hasNext())
          {
             URI url = iter2.next();
-            content.append(ft.getThreadId()).append("=").append(url)
-                  .append("\n");
+            content.append(ft.getThreadId()).append("=")
+               .append(url).append(NL);
          }
       }
 
       writeStringIntoFile(content.toString(), "img_urls.txt");
    }
 
+   private StringBuilder readFileIntoString(String filePath)
+   {
+      StringBuilder contents = new StringBuilder();
+      File f = new File(filePath);
+      try
+      {
+         String sCurrentLine;
+         FileReader fr = new FileReader(f);
+         BufferedReader br = new BufferedReader(fr);
+         while ((sCurrentLine = br.readLine()) != null) 
+         {
+            contents.append(sCurrentLine);
+            contents.append(NL);
+         }
+      }
+      catch (IOException e)
+      {
+         System.err.println(">>>> File at path: [" + filePath + "] does not exist, please ensure the correct path.");
+         System.exit(1);
+      }
+      
+      return contents;
+   }
+   
    private void writeStringIntoFile(String content, String filename)
    {
       File f = new File(filename);

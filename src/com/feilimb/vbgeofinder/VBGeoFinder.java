@@ -47,6 +47,8 @@ import org.jsoup.select.Elements;
 
 public class VBGeoFinder
 {
+   private MODE currentMode;
+
    private String VBF_HOST;
 
    private int VBF_PORT;
@@ -108,31 +110,29 @@ public class VBGeoFinder
    public static void main(String[] args)
    {
       VBGeoFinder mkf = new VBGeoFinder();
-      MODE m = initMode(args);
-      mkf.start(m);
+      mkf.start(args);
    }
 
-   private static MODE initMode(String[] args)
+   private void initMode(String[] args)
    {
-      MODE m = MODE.COLLECT;     // default to collect mode
+      currentMode = MODE.COLLECT;     // default to collect mode
       if (args != null && args.length > 0)
       {
          String mode = args[0];
          try
          {
-            m = MODE.valueOf(mode);
+            currentMode = MODE.valueOf(mode);
          }
          catch (IllegalArgumentException e)
          {
             // unrecognised mode - just leave the mode at the default
          } 
       }
-
-      return m;
    }
 
-   private void start(MODE mode)
+   private void start(String[] args)
    {
+      initMode(args);
       initProperties();
       boolean useProxy = LOCAL_PROXY_HOST != null;
       initHttpClient(useProxy, true);
@@ -140,13 +140,17 @@ public class VBGeoFinder
       login();
       
       Collection<FThread> fThreads = null;
-      switch (mode)
+      switch (currentMode)
       {
       case ANALYSE:
          fThreads = analyseImages("img_urls.txt");
          dumpUsefulInfoToFile(fThreads);
          break;
       case MINIRUN:
+         fThreads = collectThreads(FORUM_SECTION_ID, 1);
+         parseThreads(fThreads);
+         analyseImages(fThreads);
+         dumpUsefulInfoToFile(fThreads);
          break;
       case COLLECT:
       default:
@@ -294,6 +298,7 @@ public class VBGeoFinder
       Matcher m = null;
       for (int pageNum = 1; pageNum <= numPages; pageNum++)
       {
+         int numThreadsCollected = 0;
          pause(2000);
          URI url = buildForumSectionURI(forumNum, pageNum);
          try
@@ -310,6 +315,13 @@ public class VBGeoFinder
                   String threadId = m.group(2);
                   fThreads.add(new FThread(e.text(),
                         buildPageThreadURI(threadId), threadId));
+                  numThreadsCollected++;
+                  if (currentMode == MODE.MINIRUN && numThreadsCollected == 5)
+                  {
+                     // we are in a mini-run mode => so we just want to collect / analyse 
+                     // from the most recent 5 threads on the first page and then return
+                     return fThreads;
+                  }
                }
             }
          }
@@ -693,30 +705,6 @@ public class VBGeoFinder
       writeStringIntoFile(content.toString(), "img_urls.txt");
    }
 
-   private StringBuilder readFileIntoString(String filePath)
-   {
-      StringBuilder contents = new StringBuilder();
-      File f = new File(filePath);
-      try
-      {
-         String sCurrentLine;
-         FileReader fr = new FileReader(f);
-         BufferedReader br = new BufferedReader(fr);
-         while ((sCurrentLine = br.readLine()) != null) 
-         {
-            contents.append(sCurrentLine);
-            contents.append(NL);
-         }
-      }
-      catch (IOException e)
-      {
-         System.err.println(">>>> File at path: [" + filePath + "] does not exist, please ensure the correct path.");
-         System.exit(1);
-      }
-      
-      return contents;
-   }
-   
    private void writeStringIntoFile(String content, String filename)
    {
       File f = new File(filename);

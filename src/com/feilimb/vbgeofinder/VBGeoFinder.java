@@ -529,7 +529,7 @@ public class VBGeoFinder
                   && !url.toString().contains("imgur.com")
                   && !url.toString().contains("tapatalk"))
             {
-               GPSInfo gi = analyseImage(url, ft);
+               GPSInfo gi = analyseImage(url, ft.getName());
                if (gi != null)
                {
                   // bingo!
@@ -540,16 +540,16 @@ public class VBGeoFinder
       }
    }
 
-   private GPSInfo analyseImage(URI uri, FThread fThread)
+   private GPSInfo analyseImage(URI uri, String threadName)
    {
-      byte[] imgContent;
+      byte[] imgContent = null;
       try
       {
          imgContent = httpGetAsByteArray(uri);
       }
       catch (Exception e)
       {
-         throw new RuntimeException(e);
+         return null;
       }
 
       javaxt.io.Image image = new javaxt.io.Image(imgContent);
@@ -557,11 +557,8 @@ public class VBGeoFinder
 
       if (_debug)
       {
-         if (fThread != null)
-         {
-            System.out.println("Thread Name: " + fThread.getName());
-            System.out.println("Image URL: " + uri);
-         }
+         System.out.println("Thread Name: " + threadName);
+         System.out.println("Image URL: " + uri);
 
          // Print Camera Info
          System.out.println("EXIF Fields: " + exif.size());

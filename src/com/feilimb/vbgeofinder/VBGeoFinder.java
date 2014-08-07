@@ -41,548 +41,565 @@ import org.jsoup.select.Elements;
 
 public class VBGeoFinder
 {
-    private String VBF_HOST;
-    private int VBF_PORT;
-    private String VBF_USER;
-    private String VBF_PASSWD;
-    private String LOCAL_DOMAIN;
-    private String LOCAL_WORKSTATION;
-    private String LOCAL_PASSWD;
-    private String LOCAL_USER;
-    private String LOCAL_PROXY_HOST;
-    private int LOCAL_PROXY_PORT;
-    private BasicCookieStore cookieStore;
-    private CloseableHttpClient httpClient;
-    private boolean _debug = true;
-    private int totalImages;
+   private String VBF_HOST;
 
-    public static void main(String[] args)
-    {
-	VBGeoFinder mkf = new VBGeoFinder();
-	mkf.start();
-    }
+   private int VBF_PORT;
 
-    private void start()
-    {
-	initProperties();
-	boolean useProxy = LOCAL_PROXY_HOST != null;
-	initHttpClient(useProxy, true);
+   private String VBF_USER;
 
-	login();
-	Collection<FThread> fThreads = collectThreads(31, 41);
-	parseThreads(fThreads);
-	Iterator<FThread> iter = fThreads.iterator();
-	totalImages = 0;
-	while (iter.hasNext())
-	{
-	    FThread ft = iter.next();
-	    totalImages += ft.getImgURLs().size();
-	}
+   private String VBF_PASSWD;
 
-	dumpAllImgURLsToFile(fThreads);
-	analyseImages(fThreads);
-	dumpUsefulInfo(fThreads);
+   private String LOCAL_DOMAIN;
 
-	try
-	{
-	    httpClient.close();
-	}
-	catch (IOException e)
-	{
-	    throw new RuntimeException(e);
-	}
-    }
+   private String LOCAL_WORKSTATION;
 
-    private void initProperties()
-    {
-	Properties prop = new Properties();
-	try
-	{
-	    // load our properties file
-	    prop.load(new FileInputStream("config.properties"));
+   private String LOCAL_PASSWD;
 
-	    VBF_HOST = prop.getProperty("VBF_HOST");
-	    VBF_PORT = Integer.parseInt(prop.getProperty("VBF_PORT"));
-	    VBF_USER = prop.getProperty("VBF_USER");
-	    VBF_PASSWD = prop.getProperty("VBF_PASSWD");
-	    LOCAL_PROXY_HOST = prop.getProperty("LOCAL_PROXY_HOST");
-	    if (LOCAL_PROXY_HOST.isEmpty())
-	    {
-		LOCAL_PROXY_HOST = null;
-	    }
-	    if (LOCAL_PROXY_HOST != null)
-	    {
-		LOCAL_PROXY_PORT = Integer.parseInt(prop
-			.getProperty("LOCAL_PROXY_PORT"));
-		LOCAL_DOMAIN = prop.getProperty("LOCAL_DOMAIN");
-		LOCAL_WORKSTATION = prop.getProperty("LOCAL_WORKSTATION");
-		LOCAL_PASSWD = prop.getProperty("LOCAL_PASSWD");
-		LOCAL_USER = prop.getProperty("LOCAL_USER");
-	    }
-	}
-	catch (FileNotFoundException e)
-	{
-	    throw new RuntimeException(e);
-	}
-	catch (IOException e)
-	{
-	    throw new RuntimeException(e);
-	}
-    }
+   private String LOCAL_USER;
 
-    private void initHttpClient(boolean useProxy, boolean setCookieStore)
-    {
-	HttpClientBuilder clientBuilder = HttpClientBuilder.create();
+   private String LOCAL_PROXY_HOST;
 
-	if (useProxy)
-	{
-	    NTCredentials ntCreds = new NTCredentials(LOCAL_USER, LOCAL_PASSWD,
-		    LOCAL_WORKSTATION, LOCAL_DOMAIN);
-	    CredentialsProvider credsProvider = new BasicCredentialsProvider();
-	    credsProvider.setCredentials(new AuthScope(LOCAL_PROXY_HOST,
-		    LOCAL_PROXY_PORT), ntCreds);
-	    clientBuilder.setProxy(new HttpHost(LOCAL_PROXY_HOST,
-		    LOCAL_PROXY_PORT));
-	    clientBuilder.setDefaultCredentialsProvider(credsProvider);
-	    clientBuilder
-		    .setProxyAuthenticationStrategy(new ProxyAuthenticationStrategy());
-	}
+   private int LOCAL_PROXY_PORT;
 
-	clientBuilder.useSystemProperties();
+   private BasicCookieStore cookieStore;
 
-	if (setCookieStore)
-	{
-	    cookieStore = new BasicCookieStore();
-	    clientBuilder.setDefaultCookieStore(cookieStore);
-	}
+   private CloseableHttpClient httpClient;
 
-	httpClient = clientBuilder.build();
-    }
+   private boolean _debug = true;
 
-    private void login()
-    {
-	CloseableHttpResponse response = null;
-	try
-	{
-	    HttpUriRequest login = RequestBuilder.post()
-		    .setUri(new URI("http://" + VBF_HOST + "/login.php"))
-		    .addParameter("vb_login_username", VBF_USER)
-		    .addParameter("vb_login_password", VBF_PASSWD)
-		    .addParameter("cookieuser", "1")
-		    .addParameter("submit", "Login").addParameter("s", "")
-		    .addParameter("do", "login")
-		    .addParameter("forceredirect", "0")
-		    .addParameter("vb_login_md5password", "")
-		    .addParameter("vb_login_md5password_utf", "").build();
-	    response = httpClient.execute(login);
-	    HttpEntity entity = response.getEntity();
+   private int totalImages;
 
-	    System.out.println("----------------------------------------");
-	    System.out.println(response.getStatusLine());
-	    EntityUtils.consume(entity);
+   public static void main(String[] args)
+   {
+      VBGeoFinder mkf = new VBGeoFinder();
+      mkf.start();
+   }
 
-	    System.out.println("Cookies:");
-	    List<Cookie> cookies = cookieStore.getCookies();
-	    if (_debug)
-	    {
-		for (int i = 0; i < cookies.size(); i++)
-		{
-		    System.out.println("- " + cookies.get(i).toString());
-		}
-	    }
-	}
-	catch (Exception e)
-	{
-	    e.printStackTrace();
-	}
-	finally
-	{
-	    if (response != null)
-	    {
-		try
-		{
-		    response.close();
-		}
-		catch (IOException e)
-		{
-		    e.printStackTrace();
-		}
-	    }
-	}
-    }
+   private void start()
+   {
+      initProperties();
+      boolean useProxy = LOCAL_PROXY_HOST != null;
+      initHttpClient(useProxy, true);
 
-    private Collection<FThread> collectThreads(int forumNum, int numPages)
-    {
-	Collection<FThread> fThreads = new ArrayList<FThread>();
-	Pattern p = Pattern.compile("(thread_title_)(\\d+)");
-	Matcher m = null;
-	for (int pageNum = 1; pageNum <= numPages; pageNum++)
-	{
-	    pause(2000);
-	    URI url = buildForumSectionURI(forumNum, pageNum);
-	    try
-	    {
-		StringBuilder pageSource = httpGetWithResponse(url);
-		Document doc = Jsoup.parse(pageSource.toString());
-		Element element = doc.getElementById("threads");
-		Elements threadLinks = element.getElementsByTag("a");
-		for (Element e : threadLinks)
-		{
-		    m = p.matcher(e.id());
-		    if (m.matches())
-		    {
-			String threadId = m.group(2);
-			fThreads.add(new FThread(e.text(),
-				buildPageThreadURI(threadId), threadId));
-		    }
-		}
-	    }
-	    catch (Exception e)
-	    {
-		e.printStackTrace();
-		return null;
-	    }
-	}
+      login();
+      Collection<FThread> fThreads = collectThreads(31, 41);
+      parseThreads(fThreads);
+      Iterator<FThread> iter = fThreads.iterator();
+      totalImages = 0;
+      while (iter.hasNext())
+      {
+         FThread ft = iter.next();
+         totalImages += ft.getImgURLs().size();
+      }
 
-	return fThreads;
-    }
+      dumpAllImgURLsToFile(fThreads);
+      //analyseImages(fThreads);
+      //dumpUsefulInfo(fThreads);
 
-    private void pause(long millis)
-    {
-	try
-	{
-	    if (_debug)
-	    {
-		System.out.println(">>>> Pausing For " + millis/1000 + " seconds...");
-	    }
-	    Thread.sleep(millis);
-	}
-	catch (InterruptedException e)
-	{
-	    e.printStackTrace();
-	}
-    }
+      try
+      {
+         httpClient.close();
+      }
+      catch (IOException e)
+      {
+         throw new RuntimeException(e);
+      }
+   }
 
-    private void parseThreads(Collection<FThread> fThreads)
-    {
-	int fThreadIndex = 0;
-	Iterator<FThread> iter = fThreads.iterator();
-	while (iter.hasNext())
-	{
-	    FThread ft = iter.next();
-	    System.out.println(">>>>> On Thread " + (++fThreadIndex) + " / " + fThreads.size());
-	    Collection<URI> imgURLs = new LinkedHashSet<URI>();
-	    System.out.println("Name = " + ft.getName() + ", URL = "
-		    + ft.getUrl());
-	    try
-	    {
-		pause(2000);
-		StringBuilder threadSource = httpGetWithResponse(ft.getUrl());
-		String tSrc = threadSource.toString();
-		Document doc = Jsoup.parse(tSrc);
+   private void initProperties()
+   {
+      Properties prop = new Properties();
+      try
+      {
+         // load our properties file
+         prop.load(new FileInputStream("config.properties"));
 
-		Elements allPosts = doc.getElementsByAttributeValueStarting(
-			"id", "post_message");
-		for (int i = 0; i < allPosts.size(); i++)
-		{
-		    Element post = allPosts.get(i);
-		    Elements imgTags = post.getElementsByTag("img");
-		    for (Element imTag : imgTags)
-		    {
-			String imgUrl = imTag.attr("src");
-			boolean isEmoticon = (imTag.className() != null && imTag
-				.className().contains("inlineimg"));
-			if (imgUrl != null && !isEmoticon)
-			{
-			    // hack for photobucket originals:
-			    if (imgUrl.contains("photobucket.com"))
-			    {
-				imgUrl = imgUrl + "~original";
-			    }
-			    imgUrl = imgUrl.replaceAll(" ", "%20");
-			    try
-			    {
-				imgURLs.add(new URI(imgUrl));
-			    }
-			    catch (URISyntaxException e)
-			    {
-				e.printStackTrace();
-				continue;
-			    }
-			}
-		    }
-		}
-		if (_debug)
-		{
-		    System.out.println("Image URLs Collected: "
-			    + imgURLs.size());
-		}
-		ft.setImgURLs(imgURLs);
-	    }
-	    catch (Exception e)
-	    {
-		throw new RuntimeException(e);
-	    }
-	}
-    }
+         VBF_HOST = prop.getProperty("VBF_HOST");
+         VBF_PORT = Integer.parseInt(prop.getProperty("VBF_PORT"));
+         VBF_USER = prop.getProperty("VBF_USER");
+         VBF_PASSWD = prop.getProperty("VBF_PASSWD");
+         LOCAL_PROXY_HOST = prop.getProperty("LOCAL_PROXY_HOST");
+         if (LOCAL_PROXY_HOST.isEmpty())
+         {
+            LOCAL_PROXY_HOST = null;
+         }
+         if (LOCAL_PROXY_HOST != null)
+         {
+            LOCAL_PROXY_PORT = Integer.parseInt(prop
+                  .getProperty("LOCAL_PROXY_PORT"));
+            LOCAL_DOMAIN = prop.getProperty("LOCAL_DOMAIN");
+            LOCAL_WORKSTATION = prop.getProperty("LOCAL_WORKSTATION");
+            LOCAL_PASSWD = prop.getProperty("LOCAL_PASSWD");
+            LOCAL_USER = prop.getProperty("LOCAL_USER");
+         }
+      }
+      catch (FileNotFoundException e)
+      {
+         throw new RuntimeException(e);
+      }
+      catch (IOException e)
+      {
+         throw new RuntimeException(e);
+      }
+   }
 
-    private StringBuilder httpGetWithResponse(URI url) throws Exception
-    {
-	StringBuilder responseSb;
-	HttpGet request = new HttpGet(url);
-	CloseableHttpResponse response = httpClient.execute(request);
-	try
-	{
-	    System.out.println("----------------------------------------");
-	    System.out.println(response.getStatusLine());
-	    responseSb = new StringBuilder(EntityUtils.toString(response
-		    .getEntity()));
-	}
-	finally
-	{
-	    response.close();
-	}
+   private void initHttpClient(boolean useProxy, boolean setCookieStore)
+   {
+      HttpClientBuilder clientBuilder = HttpClientBuilder.create();
 
-	return responseSb;
-    }
+      if (useProxy)
+      {
+         NTCredentials ntCreds = new NTCredentials(LOCAL_USER, LOCAL_PASSWD,
+               LOCAL_WORKSTATION, LOCAL_DOMAIN);
+         CredentialsProvider credsProvider = new BasicCredentialsProvider();
+         credsProvider.setCredentials(new AuthScope(LOCAL_PROXY_HOST,
+               LOCAL_PROXY_PORT), ntCreds);
+         clientBuilder.setProxy(new HttpHost(LOCAL_PROXY_HOST,
+               LOCAL_PROXY_PORT));
+         clientBuilder.setDefaultCredentialsProvider(credsProvider);
+         clientBuilder
+               .setProxyAuthenticationStrategy(new ProxyAuthenticationStrategy());
+      }
 
-    private byte[] httpGetAsByteArray(URI url) throws Exception
-    {
-	byte[] responseByteArray;
-	HttpGet request = new HttpGet(url);
-	CloseableHttpResponse response = httpClient.execute(request);
-	try
-	{
-	    System.out.println("----------------------------------------");
-	    System.out.println(response.getStatusLine());
-	    responseByteArray = EntityUtils.toByteArray(response.getEntity());
-	}
-	finally
-	{
-	    response.close();
-	}
+      clientBuilder.useSystemProperties();
 
-	return responseByteArray;
-    }
+      if (setCookieStore)
+      {
+         cookieStore = new BasicCookieStore();
+         clientBuilder.setDefaultCookieStore(cookieStore);
+      }
 
-    private void analyseImages(Collection<FThread> fThreads)
-    {
-	Iterator<FThread> iter = fThreads.iterator();
-	while (iter.hasNext())
-	{
-	    FThread ft = iter.next();
-	    Collection<URI> imgURLs = ft.getImgURLs();
-	    Iterator<URI> iter2 = imgURLs.iterator();
-	    Collection<GPSInfo> gpsInfos = new LinkedHashSet<GPSInfo>();
-	    ft.setGPSInfos(gpsInfos);
-	    int imgIndex = 0;
-	    while (iter2.hasNext())
-	    {
-		imgIndex += 1;
-		System.out.println(">>>> Image " + imgIndex + " / "
-			+ totalImages);
-		URI url = iter2.next();
-		// GPS data is always stripped from imgur and tapatalk - so
-		// don't bother with these
-		if ((url.toString().startsWith("http://") || url.toString()
-			.startsWith("https://"))
-			&& !url.toString().contains("imgur.com")
-			&& !url.toString().contains("tapatalk"))
-		{
-		    GPSInfo gi = analyseImage(url, ft);
-		    if (gi != null)
-		    {
-			// bingo!
-			gpsInfos.add(gi);
-		    }
-		}
-	    }
-	}
-    }
+      httpClient = clientBuilder.build();
+   }
 
-    private GPSInfo analyseImage(URI uri, FThread fThread)
-    {
-	byte[] imgContent;
-	try
-	{
-	    imgContent = httpGetAsByteArray(uri);
-	}
-	catch (Exception e)
-	{
-	    throw new RuntimeException(e);
-	}
+   private void login()
+   {
+      CloseableHttpResponse response = null;
+      try
+      {
+         HttpUriRequest login = RequestBuilder.post()
+               .setUri(new URI("http://" + VBF_HOST + "/login.php"))
+               .addParameter("vb_login_username", VBF_USER)
+               .addParameter("vb_login_password", VBF_PASSWD)
+               .addParameter("cookieuser", "1")
+               .addParameter("submit", "Login").addParameter("s", "")
+               .addParameter("do", "login")
+               .addParameter("forceredirect", "0")
+               .addParameter("vb_login_md5password", "")
+               .addParameter("vb_login_md5password_utf", "").build();
+         response = httpClient.execute(login);
+         HttpEntity entity = response.getEntity();
 
-	javaxt.io.Image image = new javaxt.io.Image(imgContent);
-	java.util.HashMap<Integer, Object> exif = image.getExifTags();
+         System.out.println("----------------------------------------");
+         System.out.println(response.getStatusLine());
+         EntityUtils.consume(entity);
 
-	if (_debug)
-	{
-	    if (fThread != null)
-	    {
-		System.out.println("Thread Name: " + fThread.getName());
-		System.out.println("Image URL: " + uri);
-	    }
+         System.out.println("Cookies:");
+         List<Cookie> cookies = cookieStore.getCookies();
+         if (_debug)
+         {
+            for (int i = 0; i < cookies.size(); i++)
+            {
+               System.out.println("- " + cookies.get(i).toString());
+            }
+         }
+      }
+      catch (Exception e)
+      {
+         e.printStackTrace();
+      }
+      finally
+      {
+         if (response != null)
+         {
+            try
+            {
+               response.close();
+            }
+            catch (IOException e)
+            {
+               e.printStackTrace();
+            }
+         }
+      }
+   }
 
-	    // Print Camera Info
-	    System.out.println("EXIF Fields: " + exif.size());
-	    System.out.println("-----------------------------");
-	    System.out.println("Date: " + exif.get(0x0132)); // 0x9003
-	    System.out.println("Camera: " + exif.get(0x0110));
-	    System.out.println("Manufacturer: " + exif.get(0x010F));
-	    System.out.println("Focal Length: " + exif.get(0x920A));
-	    System.out.println("F-Stop: " + exif.get(0x829D));
-	    System.out.println("Exposure Time (1 / Shutter Speed): "
-		    + exif.get(0x829A));
-	    System.out.println("ISO Speed Ratings: " + exif.get(0x8827));
-	    System.out.println("Shutter Speed Value (APEX): "
-		    + exif.get(0x9201));
-	    System.out.println("Shutter Speed (Exposure Time): "
-		    + exif.get(0x9201));
-	    System.out.println("Aperture Value (APEX): " + exif.get(0x9202));
-	}
+   private Collection<FThread> collectThreads(int forumNum, int numPages)
+   {
+      Collection<FThread> fThreads = new ArrayList<FThread>();
+      Pattern p = Pattern.compile("(thread_title_)(\\d+)");
+      Matcher m = null;
+      for (int pageNum = 1; pageNum <= numPages; pageNum++)
+      {
+         pause(2000);
+         URI url = buildForumSectionURI(forumNum, pageNum);
+         try
+         {
+            StringBuilder pageSource = httpGetWithResponse(url);
+            Document doc = Jsoup.parse(pageSource.toString());
+            Element element = doc.getElementById("threads");
+            Elements threadLinks = element.getElementsByTag("a");
+            for (Element e : threadLinks)
+            {
+               m = p.matcher(e.id());
+               if (m.matches())
+               {
+                  String threadId = m.group(2);
+                  fThreads.add(new FThread(e.text(),
+                        buildPageThreadURI(threadId), threadId));
+               }
+            }
+         }
+         catch (Exception e)
+         {
+            e.printStackTrace();
+            return null;
+         }
+      }
 
-	double[] coord = image.getGPSCoordinate();
-	if (coord != null)
-	{
-	    if (_debug)
-	    {
-		System.err.println("GPS Coordinate: " + coord[0] + ", "
-			+ coord[1]);
-		System.err.println("GPS Datum: " + image.getGPSDatum());
-	    }
-	    GPSInfo g = new GPSInfo();
-	    g.coord = coord;
-	    g.gpsDatum = image.getGPSDatum();
-	    g.url = uri.toString();
+      return fThreads;
+   }
 
-	    return g;
-	}
+   private void pause(long millis)
+   {
+      try
+      {
+         if (_debug)
+         {
+            System.out.println(">>>> Pausing For " + millis / 1000 + " seconds...");
+         }
+         Thread.sleep(millis);
+      }
+      catch (InterruptedException e)
+      {
+         e.printStackTrace();
+      }
+   }
 
-	return null;
-    }
+   private void parseThreads(Collection<FThread> fThreads)
+   {
+      int fThreadIndex = 0;
+      Iterator<FThread> iter = fThreads.iterator();
+      while (iter.hasNext())
+      {
+         FThread ft = iter.next();
+         System.out.println(">>>>> On Thread " + (++fThreadIndex) + " / " + fThreads.size());
+         Collection<URI> imgURLs = new LinkedHashSet<URI>();
+         System.out.println("Name = " + ft.getName() + ", URL = "
+               + ft.getUrl());
+         try
+         {
+            pause(2000);
+            StringBuilder threadSource = httpGetWithResponse(ft.getUrl());
+            String tSrc = threadSource.toString();
+            Document doc = Jsoup.parse(tSrc);
 
-    private URI buildForumSectionURI(int forumNum, int pageNum)
-    {
-	URI url = null;
-	URIBuilder builder = new URIBuilder();
-	builder.setScheme("http").setHost(VBF_HOST).setPort(VBF_PORT)
-		.setPath("/forumdisplay.php").setParameter("f", "" + forumNum)
-		.setParameter("page", "" + pageNum);
-	try
-	{
-	    url = builder.build();
-	}
-	catch (URISyntaxException e)
-	{
-	    throw new RuntimeException(e);
-	}
+            Elements allPosts = doc.getElementsByAttributeValueStarting(
+                  "id", "post_message");
+            for (int i = 0; i < allPosts.size(); i++)
+            {
+               Element post = allPosts.get(i);
+               Elements imgTags = post.getElementsByTag("img");
+               for (Element imTag : imgTags)
+               {
+                  String imgUrl = imTag.attr("src");
+                  if (isHTTPURL(imgUrl))
+                  {
+                     // hack for photobucket originals:
+                     if (imgUrl.contains("photobucket.com"))
+                     {
+                        imgUrl = imgUrl + "~original";
+                     }
+                     imgUrl = imgUrl.replaceAll(" ", "%20");
+                     try
+                     {
+                        imgURLs.add(new URI(imgUrl));
+                     }
+                     catch (URISyntaxException e)
+                     {
+                        e.printStackTrace();
+                        continue;
+                     }
+                  }
+               }
+            }
+            if (_debug)
+            {
+               System.out.println("Image URLs Collected: "
+                     + imgURLs.size());
+            }
+            ft.setImgURLs(imgURLs);
+         }
+         catch (Exception e)
+         {
+            throw new RuntimeException(e);
+         }
+      }
+   }
 
-	return url;
-    }
+   private StringBuilder httpGetWithResponse(URI url) throws Exception
+   {
+      StringBuilder responseSb;
+      HttpGet request = new HttpGet(url);
+      CloseableHttpResponse response = httpClient.execute(request);
+      try
+      {
+         System.out.println("----------------------------------------");
+         System.out.println(response.getStatusLine());
+         responseSb = new StringBuilder(EntityUtils.toString(response
+               .getEntity()));
+      }
+      finally
+      {
+         response.close();
+      }
 
-    private URI buildPageThreadURI(String threadId)
-    {
-	URI url = null;
-	URIBuilder builder = new URIBuilder();
-	builder.setScheme("http").setHost(VBF_HOST).setPort(VBF_PORT)
-		.setPath("/showthread.php").setParameter("t", threadId);
-	try
-	{
-	    url = builder.build();
-	}
-	catch (URISyntaxException e)
-	{
-	    throw new RuntimeException(e);
-	}
+      return responseSb;
+   }
 
-	return url;
-    }
+   private byte[] httpGetAsByteArray(URI url) throws Exception
+   {
+      byte[] responseByteArray;
+      HttpGet request = new HttpGet(url);
+      CloseableHttpResponse response = httpClient.execute(request);
+      try
+      {
+         System.out.println("----------------------------------------");
+         System.out.println(response.getStatusLine());
+         responseByteArray = EntityUtils.toByteArray(response.getEntity());
+      }
+      finally
+      {
+         response.close();
+      }
 
-    private void dumpUsefulInfo(Collection<FThread> fThreads)
-    {
-	final String NL = "\n";
-	Iterator<FThread> iter = fThreads.iterator();
-	StringBuilder content = new StringBuilder();
-	while (iter.hasNext())
-	{
-	    FThread ft = iter.next();
-	    Collection<GPSInfo> gis = ft.getGpsInfos();
-	    if (gis != null && !gis.isEmpty())
-	    {
-		content.append(ft.getName()).append(NL);
-		content.append(ft.getThreadId()).append(NL);
-		for (GPSInfo gi : gis)
-		{
-		    content.append("GPS Coordinate: ").append(gi.coord[1])
-			    .append(", ").append(gi.coord[0]).append(NL);
-		    content.append("GPS Datum: ").append(gi.gpsDatum)
-			    .append(NL);
-		    content.append("URL: ").append(gi.url).append(NL);
-		}
-		content.append("====================================================");
-	    }
-	}
+      return responseByteArray;
+   }
 
-	writeStringIntoFile(content.toString(), "geo_imgs.txt");
-    }
+   private void analyseImages(Collection<FThread> fThreads)
+   {
+      Iterator<FThread> iter = fThreads.iterator();
+      while (iter.hasNext())
+      {
+         FThread ft = iter.next();
+         Collection<URI> imgURLs = ft.getImgURLs();
+         Iterator<URI> iter2 = imgURLs.iterator();
+         Collection<GPSInfo> gpsInfos = new LinkedHashSet<GPSInfo>();
+         ft.setGPSInfos(gpsInfos);
+         int imgIndex = 0;
+         while (iter2.hasNext())
+         {
+            imgIndex += 1;
+            System.out.println(">>>> Image " + imgIndex + " / "
+                  + totalImages);
+            URI url = iter2.next();
+            // GPS data is always stripped from imgur and tapatalk - so
+            // don't bother with these
+            if (isHTTPURL(url.toString())
+                  && !url.toString().contains("imgur.com")
+                  && !url.toString().contains("tapatalk"))
+            {
+               GPSInfo gi = analyseImage(url, ft);
+               if (gi != null)
+               {
+                  // bingo!
+                  gpsInfos.add(gi);
+               }
+            }
+         }
+      }
+   }
 
-    private void dumpAllImgURLsToFile(Collection<FThread> fThreads)
-    {
-	Iterator<FThread> iter = fThreads.iterator();
-	StringBuilder content = new StringBuilder();
-	while (iter.hasNext())
-	{
-	    FThread ft = iter.next();
-	    Collection<URI> imgURLs = ft.getImgURLs();
-	    Iterator<URI> iter2 = imgURLs.iterator();
-	    while (iter2.hasNext())
-	    {
-		URI url = iter2.next();
-		content.append(ft.getThreadId()).append("=").append(url)
-			.append("\n");
-	    }
-	}
+   private GPSInfo analyseImage(URI uri, FThread fThread)
+   {
+      byte[] imgContent;
+      try
+      {
+         imgContent = httpGetAsByteArray(uri);
+      }
+      catch (Exception e)
+      {
+         throw new RuntimeException(e);
+      }
 
-	writeStringIntoFile(content.toString(), "img_urls.txt");
-    }
+      javaxt.io.Image image = new javaxt.io.Image(imgContent);
+      java.util.HashMap<Integer, Object> exif = image.getExifTags();
 
-    private void writeStringIntoFile(String content, String filename)
-    {
-	File f = new File(filename);
+      if (_debug)
+      {
+         if (fThread != null)
+         {
+            System.out.println("Thread Name: " + fThread.getName());
+            System.out.println("Image URL: " + uri);
+         }
 
-	BufferedWriter bw = null;
-	try
-	{
-	    FileWriter fw = new FileWriter(f);
-	    bw = new BufferedWriter(fw);
-	    bw.write(content);
-	}
-	catch (IOException e)
-	{
-	    throw new RuntimeException(e);
-	}
-	finally
-	{
-	    try
-	    {
-		if (bw != null)
-		{
-		    bw.close();
-		}
-	    }
-	    catch (IOException e)
-	    {
-		throw new RuntimeException(e);
-	    }
-	}
-    }
+         // Print Camera Info
+         System.out.println("EXIF Fields: " + exif.size());
+         System.out.println("-----------------------------");
+         System.out.println("Date: " + exif.get(0x0132)); // 0x9003
+         System.out.println("Camera: " + exif.get(0x0110));
+         System.out.println("Manufacturer: " + exif.get(0x010F));
+         System.out.println("Focal Length: " + exif.get(0x920A));
+         System.out.println("F-Stop: " + exif.get(0x829D));
+         System.out.println("Exposure Time (1 / Shutter Speed): "
+               + exif.get(0x829A));
+         System.out.println("ISO Speed Ratings: " + exif.get(0x8827));
+         System.out.println("Shutter Speed Value (APEX): "
+               + exif.get(0x9201));
+         System.out.println("Shutter Speed (Exposure Time): "
+               + exif.get(0x9201));
+         System.out.println("Aperture Value (APEX): " + exif.get(0x9202));
+      }
 
-    class GPSInfo
-    {
-	double[] coord;
-	String gpsDatum;
-	String url;
-    }
+      double[] coord = image.getGPSCoordinate();
+      if (coord != null)
+      {
+         if (_debug)
+         {
+            System.err.println("GPS Coordinate: " + coord[0] + ", "
+                  + coord[1]);
+            System.err.println("GPS Datum: " + image.getGPSDatum());
+         }
+         GPSInfo g = new GPSInfo();
+         g.coord = coord;
+         g.gpsDatum = image.getGPSDatum();
+         g.url = uri.toString();
+
+         return g;
+      }
+
+      return null;
+   }
+
+   private URI buildForumSectionURI(int forumNum, int pageNum)
+   {
+      URI url = null;
+      URIBuilder builder = new URIBuilder();
+      builder.setScheme("http").setHost(VBF_HOST).setPort(VBF_PORT)
+            .setPath("/forumdisplay.php").setParameter("f", "" + forumNum)
+            .setParameter("page", "" + pageNum);
+      try
+      {
+         url = builder.build();
+      }
+      catch (URISyntaxException e)
+      {
+         throw new RuntimeException(e);
+      }
+
+      return url;
+   }
+
+   private URI buildPageThreadURI(String threadId)
+   {
+      URI url = null;
+      URIBuilder builder = new URIBuilder();
+      builder.setScheme("http").setHost(VBF_HOST).setPort(VBF_PORT)
+            .setPath("/showthread.php").setParameter("t", threadId);
+      try
+      {
+         url = builder.build();
+      }
+      catch (URISyntaxException e)
+      {
+         throw new RuntimeException(e);
+      }
+
+      return url;
+   }
+
+   private void dumpUsefulInfo(Collection<FThread> fThreads)
+   {
+      final String NL = "\n";
+      Iterator<FThread> iter = fThreads.iterator();
+      StringBuilder content = new StringBuilder();
+      while (iter.hasNext())
+      {
+         FThread ft = iter.next();
+         Collection<GPSInfo> gis = ft.getGpsInfos();
+         if (gis != null && !gis.isEmpty())
+         {
+            content.append(ft.getName()).append(NL);
+            content.append(ft.getThreadId()).append(NL);
+            for (GPSInfo gi : gis)
+            {
+               content.append("GPS Coordinate: ").append(gi.coord[1])
+                     .append(", ").append(gi.coord[0]).append(NL);
+               content.append("GPS Datum: ").append(gi.gpsDatum)
+                     .append(NL);
+               content.append("URL: ").append(gi.url).append(NL);
+            }
+            content.append("====================================================");
+         }
+      }
+
+      writeStringIntoFile(content.toString(), "geo_imgs.txt");
+   }
+
+   private void dumpAllImgURLsToFile(Collection<FThread> fThreads)
+   {
+      Iterator<FThread> iter = fThreads.iterator();
+      StringBuilder content = new StringBuilder();
+      while (iter.hasNext())
+      {
+         FThread ft = iter.next();
+         Collection<URI> imgURLs = ft.getImgURLs();
+         Iterator<URI> iter2 = imgURLs.iterator();
+         while (iter2.hasNext())
+         {
+            URI url = iter2.next();
+            content.append(ft.getThreadId()).append("=").append(url)
+                  .append("\n");
+         }
+      }
+
+      writeStringIntoFile(content.toString(), "img_urls.txt");
+   }
+
+   private void writeStringIntoFile(String content, String filename)
+   {
+      File f = new File(filename);
+
+      BufferedWriter bw = null;
+      try
+      {
+         FileWriter fw = new FileWriter(f);
+         bw = new BufferedWriter(fw);
+         bw.write(content);
+      }
+      catch (IOException e)
+      {
+         throw new RuntimeException(e);
+      }
+      finally
+      {
+         try
+         {
+            if (bw != null)
+            {
+               bw.close();
+            }
+         }
+         catch (IOException e)
+         {
+            throw new RuntimeException(e);
+         }
+      }
+   }
+
+   private boolean isHTTPURL(String url)
+   {
+      return url != null && url.startsWith("http://") || url.startsWith("https://");
+   }
+   
+   class GPSInfo
+   {
+      double[] coord;
+
+      String gpsDatum;
+
+      String url;
+   }
 
 }
 

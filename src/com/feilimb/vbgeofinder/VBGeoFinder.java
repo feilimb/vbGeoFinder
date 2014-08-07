@@ -517,8 +517,9 @@ public class VBGeoFinder
 
    private void analyseImages(Collection<FThread> fThreads)
    {
-      Iterator<FThread> it = fThreads.iterator();
+      int imgIndex = 0;
       int totalImages = 0;
+      Iterator<FThread> it = fThreads.iterator();
       while (it.hasNext())
       {
          FThread ft = it.next();
@@ -537,7 +538,6 @@ public class VBGeoFinder
          Iterator<URI> iter2 = imgURLs.iterator();
          Collection<GPSInfo> gpsInfos = new LinkedHashSet<GPSInfo>();
          ft.setGPSInfos(gpsInfos);
-         int imgIndex = 0;
          while (iter2.hasNext())
          {
             imgIndex += 1;
@@ -603,8 +603,8 @@ public class VBGeoFinder
       {
          if (_debug)
          {
-            System.err.println("GPS Coordinate: " + coord[0] + ", "
-                  + coord[1]);
+            System.err.println("GPS Coordinate: " + coord[1] + ", "
+                  + coord[0]);
             System.err.println("GPS Datum: " + image.getGPSDatum());
          }
          GPSInfo g = new GPSInfo();
@@ -678,7 +678,7 @@ public class VBGeoFinder
                      .append(NL);
                content.append("URL: ").append(gi.url).append(NL);
             }
-            content.append("====================================================");
+            content.append("====================================================").append(NL);
          }
       }
 

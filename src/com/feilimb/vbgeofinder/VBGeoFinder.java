@@ -353,6 +353,11 @@ public class VBGeoFinder
 
    private void parseThreads(Collection<FThread> fThreads)
    {
+      if (fThreads == null)
+      {
+         return;
+      }
+      
       int fThreadIndex = 0;
       Iterator<FThread> iter = fThreads.iterator();
       while (iter.hasNext())
@@ -659,6 +664,7 @@ public class VBGeoFinder
    {
       Iterator<FThread> iter = fThreads.iterator();
       StringBuilder content = new StringBuilder();
+      content.append("==================  GEO IMG DATA  ==================");
       while (iter.hasNext())
       {
          FThread ft = iter.next();
